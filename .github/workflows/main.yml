@@ -1,25 +1,92 @@
-name: Tailscale Workflow
+name: ULTIMATE RDP ACCESS WITH TAILSCALE & KALI (V2.0 FIX)
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
-  connect-tailscale:
-    runs-on: ubuntu-latest
+  rdp_tailscale_kali:
+    runs-on: windows-latest
+    timeout-minutes: 360 
+
+    env:
+      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }} 
+      RDP_USER: coder_wsl
+      RDP_PASS: ${{ secrets.ADMIN_PASS }} 
+      TS_HOSTNAME: fixed-runner-${{ github.run_id }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Tailscale
+      
+      # 1. Setup Admin Credentials
+      - name: 🛠️ Setup Admin User
         run: |
-          curl -fsSL https://tailscale.com/install.sh | sh
-
-      - name: Connect to Tailscale
+          net user $env:RDP_USER $env:RDP_PASS /add /y
+          net localgroup Administrators $env:RDP_USER /add
+          net localgroup "Remote Desktop Users" $env:RDP_USER /add
+        shell: powershell
+        
+      # 2. 🛡️ RDP Security Fixes 
+      - name: ⚙️ Reset RDP Security Settings
         run: |
-          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTHKEY }}
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "UserAuthentication" -Value 0 
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -Value 0
+          Restart-Service -Name TermService -Force
+        shell: powershell
 
-      - name: Done
-        run: echo "Tailscale connected"
+      # 3. 💻 Install VS Code and Tailscale (Added VS Code)
+      - name: 💻 Install VS Code, Tailscale and Dependencies
+        run: |
+          # VS Code for Remote Access (Optional but useful)
+          choco install vscode -y --no-progress
+          
+          # Install Tailscale
+          choco install tailscale -y --no-progress
+          
+          # Enable WSL features
+          dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
+          dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
+          Start-Sleep -Seconds 30 
+        shell: powershell
+        
+      # 4. Install Kali Linux (WSL)
+      - name: 🐧 Install Kali Linux Distribution
+        run: |
+          Invoke-WebRequest -Uri https://aka.ms/wsl-kali-linux-new -OutFile C:\temp\Kali-Linux.appx
+          Add-AppxPackage C:\temp\Kali-Linux.appx
+          wsl --set-default-version 2
+          Start-Sleep -Seconds 45 
+        shell: powershell
+        
+      # 5. Connect to Tailscale Network (FIXED ERROR HERE)
+      - name: 🔒 Connect to Tailscale Network 
+        run: |
+          # ERROR FIX: Removed -Force from Start-Service
+          Start-Service -Name Tailscale 
+          Start-Sleep -Seconds 5
+          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey="$env:TAILSCALE_AUTHKEY" --hostname="$env:TS_HOSTNAME"
+          Start-Sleep -Seconds 10 
+        shell: powershell
+        
+      # 6. Get IP and Display Details 
+      - name: 🖥️ Display Connection Details 
+        run: |
+          $TS_IP = (& "C:\Program Files\Tailscale\tailscale.exe" ip -4)
+          echo "TS_IP=$TS_IP" | Out-File -FilePath $env:GITHUB_ENV -Append
+        shell: powershell
+      - name: Final Log Output
+        shell: bash
+        run: |
+          echo "********************************************************"
+          echo "  ✅ RDP + KALI LINUX ACCESS READY (FINAL FIX) ✅"
+          echo "********************************************************"
+          echo "🔥 Tailscale IP: ${TS_IP}"
+          echo "🌐 RDP Port:     3389"
+          echo "👤 RDP User:     ${RDP_USER}"
+          echo "🔑 RDP Pass:     (Secret: ADMIN_PASS)"
+          echo "********************************************************"
+          echo "💡 Kali: Open RDP/CMD and type 'wsl'. VS Code is also installed."
+        
+      # 7. Keep Session Alive
+      - name: ⏳ Keep Session Alive
+        run: Start-Sleep 21600
+        shell: powershell
+
